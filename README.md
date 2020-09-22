@@ -32,7 +32,7 @@ Table of Contents:
   - [CocoaPods + Fastlane](#cocoapods--fastlane)
 - [Usage](#usage)
   - [Arguments](#arguments)
-- [Configuration](#configuration)
+  - [Configuration](#configuration)
   - [Exporting Typography](#exporting-typography)
 - [Design requirements](#design-requirements)
 - [Example project](#example-project)
@@ -273,7 +273,7 @@ If you want to export specific icons/images you can list their names in the last
 
 Argument `-i` or `-input` specifies path to FigmaExport configuration file `figma-export.yaml`.
 
-## Configuration
+### Configuration
 
 All available configuration options see in the [CONFIG.md](CONFIG.md) file.
 
