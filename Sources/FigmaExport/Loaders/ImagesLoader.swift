@@ -79,8 +79,7 @@ final class ImagesLoader {
         var components = try loadComponents(fileId: fileId)
             .filter {
                 $0.containingFrame.name == frameName.rawValue &&
-                    ($0.description == platform.rawValue || $0.description == nil || $0.description == "") &&
-                    $0.description?.contains("none") == false
+                    $0.description?.lowercased().contains(platform.reversed.rawValue) == false || $0.description == nil
             }
         
         if let filter = filter {
