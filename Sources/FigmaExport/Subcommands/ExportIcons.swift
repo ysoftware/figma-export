@@ -75,7 +75,7 @@ extension FigmaExportCommand {
             logger.info("Downloading remote files...")
             let localFiles = try fileDownloader.fetch(files: localAndRemoteFiles)
 
-            logger.info("Writting files to Xcode project...")
+            logger.info("Writing files to Xcode project...")
             try fileWritter.write(files: localFiles)
 
             do {
@@ -151,7 +151,7 @@ extension FigmaExportCommand {
                 )
             }
 
-            logger.info("Writting files to Android Studio project...")
+            logger.info("Writing files to Android Studio project...")
             try fileWritter.write(files: localFiles)
 
             logger.info("Done!")

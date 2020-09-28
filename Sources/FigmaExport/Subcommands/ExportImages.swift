@@ -74,7 +74,7 @@ extension FigmaExportCommand {
             logger.info("Downloading remote files...")
             let localFiles = try fileDownloader.fetch(files: localAndRemoteFiles)
 
-            logger.info("Writting files to Xcode project...")
+            logger.info("Writing files to Xcode project...")
             try fileWritter.write(files: localFiles)
 
             do {
@@ -153,7 +153,7 @@ extension FigmaExportCommand {
                 try fileConverter.convert(inputDirectoryPath: tempDirectoryDarkURL.path)
             }
 
-            logger.info("Writting files to Android Studio project...")
+            logger.info("Writing files to Android Studio project...")
             // Create output directory main/res/drawable/
             let lightDirectory = URL(fileURLWithPath: android.mainRes.path)
                 .appendingPathComponent("drawable", isDirectory: true)
@@ -208,7 +208,7 @@ extension FigmaExportCommand {
             // Move downloaded files to new empty temp directory
             try fileWritter.write(files: localFiles)
 
-            logger.info("Writting files to Android Studio project...")
+            logger.info("Writing files to Android Studio project...")
             
             // Move PNG files to main/res/drawable-XXXdpi/
             localFiles = localFiles.map { fileContents -> FileContents in
