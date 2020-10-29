@@ -79,6 +79,7 @@ final class ImagesLoader {
         var components = try loadComponents(fileId: fileId)
             .filter {
                 $0.containingFrame.name == frameName.rawValue &&
+                    $0.description?.lowercased().contains("#noexport") == false &&
                     $0.description?.lowercased().contains(platform.reversed.rawValue) == false || $0.description == nil
             }
         
