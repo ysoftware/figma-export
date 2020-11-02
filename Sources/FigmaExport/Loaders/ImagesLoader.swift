@@ -76,12 +76,13 @@ final class ImagesLoader {
     // MARK: - Helpers
 
     private func fetchImageComponents(fileId: String, frameName: FrameName, filter: String? = nil) throws -> [NodeId: Component] {
-        var components = try loadComponents(fileId: fileId)
-            .filter {
-                $0.containingFrame.name == frameName.rawValue &&
-                    $0.description?.lowercased().contains("#noexport") == false &&
-                    $0.description?.lowercased().contains(platform.reversed.rawValue) == false || $0.description == nil
-            }
+        let allComponents = try loadComponents(fileId: fileId)
+
+        var components = allComponents.filter {
+            $0.containingFrame.name == frameName.rawValue &&
+                $0.description?.lowercased().contains("#noexport") == false &&
+                $0.description?.lowercased().contains(platform.reversed.rawValue) == false || $0.description == nil
+        }
         
         if let filter = filter {
             let assetsFilter = AssetsFilter(filter: filter)
