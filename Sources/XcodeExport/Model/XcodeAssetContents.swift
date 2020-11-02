@@ -34,7 +34,7 @@ struct XcodeAssetContents: Encodable {
     }
     
     struct TemplateProperties: Encodable {
-        let templateRenderingIntent = "template"
+        let templateRenderingIntent = "original"
         let preservesVectorRepresentation: Bool?
         
         enum CodingKeys: String, CodingKey {
