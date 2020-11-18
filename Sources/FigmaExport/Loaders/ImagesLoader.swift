@@ -8,6 +8,14 @@ final class ImagesLoader {
     let params: Params
     let platform: Platform
     
+    private var iconsFrameName: String {
+        params.common?.icons?.figmaFrameName ?? "Icons"
+    }
+    
+    private var imagesFrameName: String {
+        params.common?.images?.figmaFrameName ?? "Illustrations"
+    }
+    
     init(figmaClient: FigmaClient, params: Params, platform: Platform) {
         self.figmaClient = figmaClient
         self.params = params
@@ -20,31 +28,32 @@ final class ImagesLoader {
              (.ios, .svg):
             return try _loadImages(
                 fileId: params.figma.lightFileId,
-                frameName: .icons,
+                frameName: iconsFrameName,
                 params: SVGParams(),
                 filter: filter
-            ).map { ImagePack.singleScale($0) }
+            )
         case (.ios, _):
             return try _loadImages(
                 fileId: params.figma.lightFileId,
-                frameName: .icons,
+                frameName: iconsFrameName,
                 params: PDFParams(),
                 filter: filter
-            ).map { ImagePack.singleScale($0) }
+            )
         }
     }
 
     func loadImages(filter: String? = nil) throws -> (light: [ImagePack], dark: [ImagePack]?) {
-        if (platform == .android && params.android?.images.format == .png) || platform == .ios {
+        switch (platform, params.android?.images?.format) {
+        case (.android, .png), (.android, .webp), (.ios, .none):
             let lightImages = try loadPNGImages(
                 fileId: params.figma.lightFileId,
-                frameName: .illustrations,
+                frameName: imagesFrameName,
                 filter: filter,
                 platform: platform)
             let darkImages = try params.figma.darkFileId.map {
                 try loadPNGImages(
                     fileId: $0,
-                    frameName: .illustrations,
+                    frameName: imagesFrameName,
                     filter: filter,
                     platform: platform)
             }
@@ -52,34 +61,31 @@ final class ImagesLoader {
                 lightImages,
                 darkImages
             )
-        } else {
-            let light = try _loadImages(
+        default:
+            let lightPacks = try _loadImages(
                 fileId: params.figma.lightFileId,
-                frameName: .illustrations,
+                frameName: imagesFrameName,
                 params: SVGParams(),
                 filter: filter)
             
-            let dark = try params.figma.darkFileId.map {
+            let darkPacks = try params.figma.darkFileId.map {
                 try _loadImages(
                     fileId: $0,
-                    frameName: .illustrations,
+                    frameName: imagesFrameName,
                     params: SVGParams(),
                     filter: filter)
             }
-            return (
-                light.map { ImagePack.singleScale($0) },
-                dark?.map { ImagePack.singleScale($0) }
-            )
+            return (lightPacks, darkPacks)
         }
     }
 
     // MARK: - Helpers
 
-    private func fetchImageComponents(fileId: String, frameName: FrameName, filter: String? = nil) throws -> [NodeId: Component] {
+    private func fetchImageComponents(fileId: String, frameName: String, filter: String? = nil) throws -> [NodeId: Component] {
         let allComponents = try loadComponents(fileId: fileId)
 
         var components = allComponents.filter {
-            $0.containingFrame.name == frameName.rawValue &&
+            $0.containingFrame.name == frameName &&
                 $0.description?.lowercased().contains("#noexport") == false &&
                 $0.description?.lowercased().contains(platform.reversed.rawValue) == false || $0.description == nil
         }
@@ -94,7 +100,12 @@ final class ImagesLoader {
         return Dictionary(uniqueKeysWithValues: components.map { ($0.nodeId, $0) })
     }
 
-    private func _loadImages(fileId: String, frameName: FrameName, params: FormatParams, filter: String? = nil) throws -> [Image] {
+    private func _loadImages(
+        fileId: String,
+        frameName: String,
+        params: FormatParams,
+        filter: String? = nil
+    ) throws -> [ImagePack] {
         let imagesDict = try fetchImageComponents(fileId: fileId, frameName: frameName, filter: filter)
         
         guard !imagesDict.isEmpty else {
@@ -103,46 +114,56 @@ final class ImagesLoader {
         
         let imagesIds: [NodeId] = imagesDict.keys.map { $0 }
         let imageIdToImagePath = try loadImages(fileId: fileId, nodeIds: imagesIds, params: params)
-        
-        return imageIdToImagePath.map { (imageId, imagePath) -> Image in
-            let name = imagesDict[imageId]!.name
-            return Image(
-                name: name,
-                url: URL(string: imagePath)!,
-                format: params.format
-            )
+
+        // Group images by name
+        let groups = Dictionary(grouping: imagesDict) { $1.name.parseNameAndIdiom(platform: platform).name }
+
+        // Create image packs for groups
+        let imagePacks = groups.compactMap { packName, components -> ImagePack? in
+            let packImages = components.compactMap { nodeId, component -> Image? in
+                guard let urlString = imageIdToImagePath[nodeId], let url = URL(string: urlString) else {
+                    return nil
+                }
+                let (name, idiom) = component.name.parseNameAndIdiom(platform: platform)
+                return Image(name: name, scale: .all, idiom: idiom, url: url, format: params.format)
+            }
+            return ImagePack(name: packName, images: packImages, platform: platform)
         }
+        return imagePacks
     }
 
-    private func loadPNGImages(fileId: String, frameName: FrameName, filter: String? = nil, platform: Platform) throws -> [ImagePack] {
+    private func loadPNGImages(fileId: String, frameName: String, filter: String? = nil, platform: Platform) throws -> [ImagePack] {
         let imagesDict = try fetchImageComponents(fileId: fileId, frameName: frameName, filter: filter)
         
         guard !imagesDict.isEmpty else {
             throw FigmaExportError.componentsNotFound
         }
-        
+
         let imagesIds: [NodeId] = imagesDict.keys.map { $0 }
+        let scales = platform == .android ? [1, 2, 3, 1.5, 4.0] : [1, 2, 3]
 
         var images: [Double: [NodeId: ImagePath]] = [:]
-        images[1.0] = try loadImages(fileId: fileId, nodeIds: imagesIds, params: PNGParams(scale: 1.0))
-        images[2.0] = try loadImages(fileId: fileId, nodeIds: imagesIds, params: PNGParams(scale: 2.0))
-        images[3.0] = try loadImages(fileId: fileId, nodeIds: imagesIds, params: PNGParams(scale: 3.0))
-        if platform == .android {
-            images[1.5] = try loadImages(fileId: fileId, nodeIds: imagesIds, params: PNGParams(scale: 1.5))
-            images[4.0] = try loadImages(fileId: fileId, nodeIds: imagesIds, params: PNGParams(scale: 4.0))
+        for scale in scales {
+            images[scale] = try loadImages(fileId: fileId, nodeIds: imagesIds, params: PNGParams(scale: scale))
         }
-        return imagesIds.map { imageId -> ImagePack in
-            let name = imagesDict[imageId]!.name
 
-            var scaledImages: [Double: Image] = [:]
-                
-            images.forEach { scale, idToPath in
-                let url = URL(string: idToPath[imageId]!)!
-                let image = Image(name: name, url: url, format: "png")
-                scaledImages[scale] = image
+        // Group images by name
+        let groups = Dictionary(grouping: imagesDict) { $1.name.parseNameAndIdiom(platform: platform).name }
+
+        // Create image packs for groups
+        let imagePacks = groups.compactMap { packName, components -> ImagePack? in
+            let packImages = components.flatMap { nodeId, component -> [Image] in
+                let (name, idiom) = component.name.parseNameAndIdiom(platform: platform)
+                return scales.compactMap { scale -> Image? in
+                    guard let urlString = images[scale]?[nodeId], let url = URL(string: urlString) else {
+                        return nil
+                    }
+                    return Image(name: name, scale: .individual(scale), idiom: idiom, url: url, format: "png")
+                }
             }
-            return ImagePack.individualScales(scaledImages)
+            return ImagePack(name: packName, images: packImages, platform: platform)
         }
+        return imagePacks
     }
 
     // MARK: - Figma
@@ -156,4 +177,27 @@ final class ImagesLoader {
         let endpoint = ImageEndpoint(fileId: fileId, nodeIds: nodeIds, params: params)
         return try figmaClient.request(endpoint)
     }
+}
+
+// MARK: - String Utils
+
+private extension String {
+
+    func parseNameAndIdiom(platform: Platform) -> (name: String, idiom: String) {
+        switch platform {
+        case .android:
+            return (self, "")
+        case .ios:
+            guard let regex = try? NSRegularExpression(pattern: "(.*)~(.*)$") else {
+                return (self, "")
+            }
+            guard let match = regex.firstMatch(in: self, range: NSRange(startIndex..., in: self)),
+                  let name = Range(match.range(at: 1), in: self),
+                  let idiom = Range(match.range(at: 2), in: self) else {
+                return (self, "")
+            }
+            return (String(self[name]), String(self[idiom]))
+        }
+    }
+
 }

@@ -1,4 +1,7 @@
 import Foundation
+import FigmaExportCore
+
+extension NameStyle: Decodable {}
 
 struct Params: Decodable {
 
@@ -9,25 +12,25 @@ struct Params: Decodable {
     
     struct Common: Decodable {
         struct Colors: Decodable {
-            let nameValidateRegexp: String
+            let nameValidateRegexp: String?
+            let nameReplaceRegexp: String?
         }
         
         struct Icons: Decodable {
-            let nameValidateRegexp: String
+            let nameValidateRegexp: String?
+            let figmaFrameName: String?
+            let nameReplaceRegexp: String?
         }
         
         struct Images: Decodable {
-            let nameValidateRegexp: String
+            let nameValidateRegexp: String?
+            let figmaFrameName: String?
+            let nameReplaceRegexp: String?
         }
         
-        let colors: Colors
-        let icons: Icons
-        let images: Images
-    }
-    
-    enum NameStyle: String, Decodable {
-        case camelCase = "camelCase"
-        case snakeCase = "snake_case"
+        let colors: Colors?
+        let icons: Icons?
+        let images: Images?
     }
     
     enum VectorFormat: String, Decodable {
@@ -82,15 +85,30 @@ struct Params: Decodable {
     }
 
     struct Android: Decodable {
+        struct Icons: Decodable {
+            let output: String
+        }
         struct Images: Decodable {
             enum Format: String, Decodable {
                 case svg
                 case png
+                case webp
             }
+            struct FormatOptions: Decodable {
+                enum Encoding: String, Decodable {
+                    case lossy
+                    case lossless
+                }
+                let encoding: Encoding
+                let quality: Int?
+            }
+            let output: String
             let format: Format
+            let webpOptions: FormatOptions?
         }
         let mainRes: URL
-        let images: Images
+        let icons: Icons?
+        let images: Images?
     }
 
     let figma: Figma

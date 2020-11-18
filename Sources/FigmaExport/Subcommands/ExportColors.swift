@@ -39,7 +39,8 @@ extension FigmaExportCommand {
                 logger.info("Processing colors...")
                 let processor = ColorsProcessor(
                     platform: .ios,
-                    nameValidateRegexp: params.common?.colors.nameValidateRegexp,
+                    nameValidateRegexp: params.common?.colors?.nameValidateRegexp,
+                    nameReplaceRegexp: params.common?.colors?.nameReplaceRegexp,
                     nameStyle: params.ios?.colors.nameStyle
                 )
                 let colorPairs = try processor.process(light: colors.light, dark: colors.dark).get()
@@ -54,7 +55,8 @@ extension FigmaExportCommand {
                 logger.info("Processing colors...")
                 let processor = ColorsProcessor(
                     platform: .android,
-                    nameValidateRegexp: params.common?.colors.nameValidateRegexp,
+                    nameValidateRegexp: params.common?.colors?.nameValidateRegexp,
+                    nameReplaceRegexp: params.common?.colors?.nameReplaceRegexp,
                     nameStyle: .snakeCase
                 )
                 let colorPairs = try processor.process(light: colors.light, dark: colors.dark).get()
@@ -67,7 +69,7 @@ extension FigmaExportCommand {
         }
         
         private func exportXcodeColors(colorPairs: [AssetPair<Color>], iosParams: Params.iOS, logger: Logger) throws {
-            var colorsURL: URL? = nil
+            var colorsURL: URL?
             if iosParams.colors.useColorAssets {
                 if let folder = iosParams.colors.assetsFolder {
                     colorsURL = iosParams.xcassetsPath.appendingPathComponent(folder)
@@ -107,6 +109,13 @@ extension FigmaExportCommand {
         private func exportAndroidColors(colorPairs: [AssetPair<Color>], androidParams: Params.Android) throws {
             let exporter = AndroidColorExporter(outputDirectory: androidParams.mainRes)
             let files = exporter.export(colorPairs: colorPairs)
+            
+            let lightColorsFileURL = androidParams.mainRes.appendingPathComponent("values/colors.xml")
+            let darkColorsFileURL = androidParams.mainRes.appendingPathComponent("values-night/colors.xml")
+            
+            try? FileManager.default.removeItem(atPath: lightColorsFileURL.path)
+            try? FileManager.default.removeItem(atPath: darkColorsFileURL.path)
+            
             try fileWritter.write(files: files)
         }
     }

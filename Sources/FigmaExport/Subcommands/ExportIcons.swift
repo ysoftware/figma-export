@@ -15,10 +15,15 @@ extension FigmaExportCommand {
             abstract: "Exports icons from Figma",
             discussion: "Exports icons from Figma to Xcode / Android Studio project")
         
-        @Option(name: .shortAndLong, default: "figma-export.yaml", help: "An input YAML file with figma and platform properties.")
+        @Option(name: .shortAndLong, default: "figma-export.yaml",
+                help: "An input YAML file with figma and platform properties.")
         var input: String
         
-        @Argument(help: "[Optional] Name of the icons to export. For example \"ic/24/edit\" to export single icon, \"ic/24/edit, ic/16/notification\" to export several icons and \"ic/16/*\" to export all icons of size 16 pt")
+        @Argument(help: """
+        [Optional] Name of the icons to export. For example \"ic/24/edit\" \
+        to export single icon, \"ic/24/edit, ic/16/notification\" to export several icons and \
+        \"ic/16/*\" to export all icons of size 16 pt
+        """)
         var filter: String?
         
         func run() throws {
@@ -44,7 +49,10 @@ extension FigmaExportCommand {
         }
         
         private func exportiOSIcons(client: FigmaClient, params: Params, logger: Logger) throws {
-            guard let ios = params.ios else { return }
+            guard let ios = params.ios else {
+                logger.info("Nothing to do. You haven’t specified ios parameter in the config file.")
+                return
+            }
 
             logger.info("Fetching icons info from Figma. Please wait...")
             let loader = ImagesLoader(figmaClient: client, params: params, platform: .ios)
@@ -53,7 +61,8 @@ extension FigmaExportCommand {
             logger.info("Processing icons...")
             let processor = ImagesProcessor(
                 platform: .ios,
-                nameValidateRegexp: params.common?.icons.nameValidateRegexp,
+                nameValidateRegexp: params.common?.icons?.nameValidateRegexp,
+                nameReplaceRegexp: params.common?.icons?.nameReplaceRegexp,
                 nameStyle: params.ios?.icons.nameStyle
             )
             let icons = try processor.process(assets: images).get()
@@ -67,7 +76,7 @@ extension FigmaExportCommand {
                 swiftUIImageExtensionURL: ios.icons.swiftUIImageSwift)
             
             let exporter = XcodeIconsExporter(output: output)
-            let localAndRemoteFiles = try exporter.export(assets: icons.map { $0.single }, append: filter != nil)
+            let localAndRemoteFiles = try exporter.export(icons: icons, append: filter != nil)
             if filter == nil {
                 try? FileManager.default.removeItem(atPath: assetsURL.path)
             }
@@ -94,7 +103,10 @@ extension FigmaExportCommand {
         }
         
         private func exportAndroidIcons(client: FigmaClient, params: Params, logger: Logger) throws {
-            guard let android = params.android else { return }
+            guard let android = params.android, let androidIcons = android.icons else {
+                logger.info("Nothing to do. You haven’t specified android.icons parameter in the config file.")
+                return
+            }
             
             // 1. Get Icons info
             logger.info("Fetching icons info from Figma. Please wait...")
@@ -105,7 +117,8 @@ extension FigmaExportCommand {
             logger.info("Processing icons...")
             let processor = ImagesProcessor(
                 platform: .android,
-                nameValidateRegexp: params.common?.icons.nameValidateRegexp,
+                nameValidateRegexp: params.common?.icons?.nameValidateRegexp,
+                nameReplaceRegexp: params.common?.icons?.nameReplaceRegexp,
                 nameStyle: .snakeCase
             )
             let icons = try processor.process(light: images, dark: nil).get()
@@ -115,11 +128,12 @@ extension FigmaExportCommand {
         
             // 3. Download SVG files to user's temp directory
             logger.info("Downloading remote files...")
-            let remoteFiles = icons.map { asset -> FileContents in
-                let image = asset.light
-                let fileURL = URL(string: "\(image.name).svg")!
-                let dest = Destination(directory: tempDirectoryURL, file: fileURL)
-                return FileContents(destination: dest, sourceURL: image.single.url)
+            let remoteFiles = icons.flatMap { asset -> [FileContents] in
+                asset.light.images.map { image -> FileContents in
+                    let fileURL = URL(string: "\(image.name).svg")!
+                    let dest = Destination(directory: tempDirectoryURL, file: fileURL)
+                    return FileContents(destination: dest, sourceURL: image.url)
+                }
             }
             var localFiles = try fileDownloader.fetch(files: remoteFiles)
             
@@ -128,11 +142,17 @@ extension FigmaExportCommand {
             
             // 5. Convert all SVG to XML files
             logger.info("Converting SVGs to XMLs...")
-            try fileConverter.convert(inputDirectoryPath: tempDirectoryURL.path)
+            try svgFileConverter.convert(inputDirectoryPath: tempDirectoryURL.path)
             
-            // Create output directory main/res/drawable/
-            let outputDirectory = URL(fileURLWithPath: android.mainRes.path)
-                .appendingPathComponent("drawable", isDirectory: true)
+            // Create output directory main/res/custom-directory/drawable/
+            let outputDirectory = URL(fileURLWithPath: android.mainRes
+                                        .appendingPathComponent(androidIcons.output)
+                                        .appendingPathComponent("drawable", isDirectory: true).path)
+            
+            if filter == nil {
+                // Clear output directory
+                try? FileManager.default.removeItem(atPath: outputDirectory.path)
+            }
             
             // 6. Move XML files to main/res/drawable/
             localFiles = localFiles.map { fileContents -> FileContents in

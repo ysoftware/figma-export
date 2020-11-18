@@ -15,10 +15,15 @@ extension FigmaExportCommand {
             abstract: "Exports images from Figma",
             discussion: "Exports images from Figma to Xcode / Android Studio project")
 
-        @Option(name: .shortAndLong, default: "figma-export.yaml", help: "An input YAML file with figma and platform properties.")
+        @Option(name: .shortAndLong, default: "figma-export.yaml",
+                help: "An input YAML file with figma and platform properties.")
         var input: String
         
-        @Argument(help: "[Optional] Name of the images to export. For example \"img/login\" to export single image, \"img/onboarding/1, img/onboarding/2\" to export several images and \"img/onboarding/*\" to export all images from onboarding group")
+        @Argument(help: """
+        [Optional] Name of the images to export. For example \"img/login\" to export \
+        single image, \"img/onboarding/1, img/onboarding/2\" to export several images \
+        and \"img/onboarding/*\" to export all images from onboarding group
+        """)
         var filter: String?
         
         func run() throws {
@@ -44,7 +49,10 @@ extension FigmaExportCommand {
         }
 
         private func exportiOSImages(client: FigmaClient, params: Params, logger: Logger) throws {
-            guard let ios = params.ios else { return }
+            guard let ios = params.ios else {
+                logger.info("Nothing to do. You haven’t specified ios parameter in the config file.")
+                return
+            }
 
             logger.info("Fetching images info from Figma. Please wait...")
             let loader = ImagesLoader(figmaClient: client, params: params, platform: .ios)
@@ -53,7 +61,8 @@ extension FigmaExportCommand {
             logger.info("Processing images...")
             let processor = ImagesProcessor(
                 platform: .ios,
-                nameValidateRegexp: params.common?.images.nameValidateRegexp,
+                nameValidateRegexp: params.common?.images?.nameValidateRegexp,
+                nameReplaceRegexp: params.common?.images?.nameReplaceRegexp,
                 nameStyle: params.ios?.images.nameStyle
             )
             let images = try processor.process(light: imagesTuple.light, dark: imagesTuple.dark).get()
@@ -93,7 +102,10 @@ extension FigmaExportCommand {
         }
         
         private func exportAndroidImages(client: FigmaClient, params: Params, logger: Logger) throws {
-            guard let android = params.android else { return }
+            guard let androidImages = params.android?.images else {
+                logger.info("Nothing to do. You haven’t specified android.images parameter in the config file.")
+                return
+            }
 
             logger.info("Fetching images info from Figma. Please wait...")
             let loader = ImagesLoader(figmaClient: client, params: params, platform: .android)
@@ -102,22 +114,27 @@ extension FigmaExportCommand {
             logger.info("Processing images...")
             let processor = ImagesProcessor(
                 platform: .android,
-                nameValidateRegexp: params.common?.images.nameValidateRegexp,
+                nameValidateRegexp: params.common?.images?.nameValidateRegexp,
+                nameReplaceRegexp: params.common?.images?.nameReplaceRegexp,
                 nameStyle: .snakeCase
             )
             let images = try processor.process(light: imagesTuple.light, dark: imagesTuple.dark).get()
             
-            if android.images.format == .svg {
+            switch androidImages.format {
+            case .svg:
                 try exportAndroidSVGImages(images: images, params: params, logger: logger)
-            } else if android.images.format == .png {
-                try exportAndroidPNGImages(images: images, params: params, logger: logger)
+            case .png, .webp:
+                try exportAndroidRasterImages(images: images, params: params, logger: logger)
             }
             
             logger.info("Done!")
         }
         
         private func exportAndroidSVGImages(images: [AssetPair<ImagesProcessor.AssetType>], params: Params, logger: Logger) throws {
-            guard let android = params.android else { return }
+            guard let android = params.android, let androidImages = android.images else {
+                logger.info("Nothing to do. You haven’t specified android.images parameter in the config file.")
+                return
+            }
 
             // Create empty temp directory
             let tempDirectoryLightURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -126,19 +143,17 @@ extension FigmaExportCommand {
             // Download SVG files to user's temp directory
             logger.info("Downloading remote files...")
             let remoteFiles = images.flatMap { asset -> [FileContents] in
-                let image = asset.light
-                let fileURL = URL(string: "\(image.name).svg")!
-                let dest = Destination(directory: tempDirectoryLightURL, file: fileURL)
-                var result = [FileContents(destination: dest, sourceURL: image.single.url)]
-
-                if let dark = asset.dark {
-                    let fileURL = URL(string: "\(dark.name).svg")!
-                    let dest = Destination(directory: tempDirectoryDarkURL, file: fileURL)
-                    var file = FileContents(destination: dest, sourceURL: dark.single.url)
-                    file.dark = true
-                    result.append(file)
+                let lightFiles = asset.light.images.map { image -> FileContents in
+                    let fileURL = URL(string: "\(image.name).svg")!
+                    let dest = Destination(directory: tempDirectoryLightURL, file: fileURL)
+                    return FileContents(destination: dest, sourceURL: image.url)
                 }
-                return result
+                let darkFiles = asset.dark?.images.map { image -> FileContents in
+                    let fileURL = URL(string: "\(image.name).svg")!
+                    let dest = Destination(directory: tempDirectoryLightURL, file: fileURL)
+                    return FileContents(destination: dest, sourceURL: image.url, dark: true)
+                } ?? []
+                return lightFiles + darkFiles
             }
             var localFiles = try fileDownloader.fetch(files: remoteFiles)
             
@@ -147,19 +162,28 @@ extension FigmaExportCommand {
             
             // Convert all SVG to XML files
             logger.info("Converting SVGs to XMLs...")
-            try fileConverter.convert(inputDirectoryPath: tempDirectoryLightURL.path)
+            try svgFileConverter.convert(inputDirectoryPath: tempDirectoryLightURL.path)
             if images.first?.dark != nil {
                 logger.info("Converting dark SVGs to XMLs...")
-                try fileConverter.convert(inputDirectoryPath: tempDirectoryDarkURL.path)
+                try svgFileConverter.convert(inputDirectoryPath: tempDirectoryDarkURL.path)
             }
 
             logger.info("Writing files to Android Studio project...")
             // Create output directory main/res/drawable/
-            let lightDirectory = URL(fileURLWithPath: android.mainRes.path)
-                .appendingPathComponent("drawable", isDirectory: true)
             
-            let darkDirectory = URL(fileURLWithPath: android.mainRes.path)
-                .appendingPathComponent("drawable-night", isDirectory: true)
+            let lightDirectory = URL(fileURLWithPath: android.mainRes
+                .appendingPathComponent(androidImages.output)
+                .appendingPathComponent("drawable", isDirectory: true).path)
+            
+            let darkDirectory = URL(fileURLWithPath: android.mainRes
+                .appendingPathComponent(androidImages.output)
+                .appendingPathComponent("drawable-night", isDirectory: true).path)
+            
+            if filter == nil {
+                // Clear output directory
+                try? FileManager.default.removeItem(atPath: lightDirectory.path)
+                try? FileManager.default.removeItem(atPath: darkDirectory.path)
+            }
             
             // Move XML files to main/res/drawable/
             localFiles = localFiles.map { fileContents -> FileContents in
@@ -185,8 +209,11 @@ extension FigmaExportCommand {
             try FileManager.default.removeItem(at: tempDirectoryDarkURL)
         }
         
-        private func exportAndroidPNGImages(images: [AssetPair<ImagesProcessor.AssetType>], params: Params, logger: Logger) throws {
-            guard let android = params.android else { return }
+        private func exportAndroidRasterImages(images: [AssetPair<ImagesProcessor.AssetType>], params: Params, logger: Logger) throws {
+            guard let android = params.android, let androidImages = android.images else {
+                logger.info("Nothing to do. You haven’t specified android.images parameter in the config file.")
+                return
+            }
 
             // Create empty temp directory
             let tempDirectoryURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -194,26 +221,53 @@ extension FigmaExportCommand {
             // Download files to user's temp directory
             logger.info("Downloading remote files...")
             let remoteFiles = images.flatMap { asset -> [FileContents] in
-                var result = [FileContents]()
-                if case ImagePack.individualScales(let images) = asset.light {
-                    result.append(contentsOf: makeRemoteFiles(images: images, dark: false, outputDirectory: tempDirectoryURL))
-                }
-                if let darkImages = asset.dark, case ImagePack.individualScales(let images) = darkImages {
-                    result.append(contentsOf: makeRemoteFiles(images: images, dark: true, outputDirectory: tempDirectoryURL))
-                }
-                return result
+                let lightFiles = makeRemoteFiles(
+                    images: asset.light.images,
+                    dark: false,
+                    outputDirectory: tempDirectoryURL
+                )
+                let darkFiles = asset.dark.flatMap { darkImagePack -> [FileContents] in
+                    makeRemoteFiles(images: darkImagePack.images, dark: true, outputDirectory: tempDirectoryURL)
+                } ?? []
+                return lightFiles + darkFiles
             }
+            
             var localFiles = try fileDownloader.fetch(files: remoteFiles)
 
             // Move downloaded files to new empty temp directory
             try fileWritter.write(files: localFiles)
+            
+            // Convert to WebP
+            if androidImages.format == .webp, let options = androidImages.webpOptions {
+                logger.info("Converting PNG files to WebP...")
+                let converter: WebpConverter
+                switch (options.encoding, options.quality) {
+                case (.lossless, _):
+                    converter = WebpConverter(encoding: .lossless)
+                case (.lossy, let quality?):
+                    converter = WebpConverter(encoding: .lossy(quality: quality))
+                case (.lossy, .none):
+                    fatalError("Encoding quality not specified. Set android.images.webpOptions.quality in YAML file.")
+                }
+                localFiles = try localFiles.map { file in
+                    try converter.convert(file: file.destination.url)
+                    return file.changingExtension(newExtension: "webp")
+                }
+            }
+            
+            if filter == nil {
+                // Clear output directory
+                let outputDirectory = URL(fileURLWithPath: android.mainRes.appendingPathComponent(androidImages.output).path)
+                try? FileManager.default.removeItem(atPath: outputDirectory.path)
+            }
 
             logger.info("Writing files to Android Studio project...")
             
-            // Move PNG files to main/res/drawable-XXXdpi/
+            // Move PNG/WebP files to main/res/figma-export-images/drawable-XXXdpi/
             localFiles = localFiles.map { fileContents -> FileContents in
                 let directoryName = Drawable.scaleToDrawableName(fileContents.scale, dark: fileContents.dark)
-                let directory = URL(fileURLWithPath: android.mainRes.path).appendingPathComponent(directoryName, isDirectory: true)
+                let directory = URL(fileURLWithPath: android.mainRes.appendingPathComponent(androidImages.output).path)
+                    .appendingPathComponent(directoryName, isDirectory: true)
                 return FileContents(
                     destination: Destination(directory: directory, file: fileContents.destination.file),
                     dataFile: fileContents.destination.url
@@ -229,22 +283,17 @@ extension FigmaExportCommand {
         ///   - images: Dictionary of images. Key = scale, value = image info
         ///   - dark: Dark mode?
         ///   - outputDirectory: URL of the output directory
-        private func makeRemoteFiles(images: [Double: Image], dark: Bool, outputDirectory: URL) -> [FileContents] {
-            var result: [FileContents] = []
-            for scale in images.keys {
-                guard let image = images[scale] else { continue }
+        private func makeRemoteFiles(images: [Image], dark: Bool, outputDirectory: URL) -> [FileContents] {
+            images.map { image -> FileContents in
                 let fileURL = URL(string: "\(image.name).\(image.format)")!
+                let scale = image.scale.value
                 let dest = Destination(
                     directory: outputDirectory
                         .appendingPathComponent(dark ? "dark" : "light")
                         .appendingPathComponent(String(scale))
                     , file: fileURL)
-                var file = FileContents(destination: dest, sourceURL: image.url)
-                file.scale = scale
-                file.dark = dark
-                result.append(file)
+                return FileContents(destination: dest, sourceURL: image.url, scale: scale, dark: dark)
             }
-            return result
         }
     }
 }

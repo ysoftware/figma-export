@@ -27,16 +27,19 @@ final class FileDownloader {
             }
 
             group.enter()
-            let task = session.downloadTask(with: remoteURL) { localURL, urlResponse, error in
+            let task = session.downloadTask(with: remoteURL) { localURL, _, error in
                 defer { group.leave() }
                 
                 guard let fileURL = localURL, error == nil else {
                     errors.append(error!)
                     return
                 }
-                var newFile = FileContents(destination: file.destination, dataFile: fileURL)
-                newFile.dark = file.dark
-                newFile.scale = file.scale
+                let newFile = FileContents(
+                    destination: file.destination,
+                    dataFile: fileURL,
+                    scale: file.scale,
+                    dark: file.dark
+                )
                 newFiles.append(newFile)
                 downloaded += 1
                 self.logger.info("Downloaded \(downloaded)/\(remoteFileCount)")

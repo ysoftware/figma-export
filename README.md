@@ -5,6 +5,7 @@
 [![SPM compatible](https://img.shields.io/badge/spm-compatible-brightgreen.svg?style=flat)](https://swift.org/package-manager)
 [![GitHub license](https://img.shields.io/badge/license-MIT-lightgrey.svg)](https://github.com/RedMadRobot/Catbird/blob/master/LICENSE)
 [![CocoaPods Compatible](https://img.shields.io/cocoapods/v/FigmaExport.svg)](https://cocoapods.org/pods/FigmaExport)
+[![codebeat badge](https://codebeat.co/badges/6c346142-a942-4c13-ae6b-5517b4c50b1d)](https://codebeat.co/projects/github-com-redmadrobot-figma-export-master)
 
 Command line utility to export colors, typography, icons and images from Figma to Xcode / Android Studio project.
 * color - Figma's color style
@@ -31,15 +32,12 @@ Table of Contents:
   - [Homebrew](#homebrew)
   - [CocoaPods + Fastlane](#cocoapods--fastlane)
 - [Usage](#usage)
+  - [Android](#android-1)
   - [Arguments](#arguments)
-  - [Figma properties](#figma-properties)
-  - [iOS properties](#ios-properties)
-  - [Android properties](#android-properties)
+  - [Configuration](#configuration)
   - [Exporting Typography](#exporting-typography)
 - [Design requirements](#design-requirements)
 - [Example project](#example-project)
-  - [Example iOS project](#example-ios-project)
-  - [Example Android project](#example-android-project)
 - [Contributing](#contributing)
 - [License](#license)
 - [Feedback](#feedback)
@@ -181,6 +179,11 @@ extension UIImage {
 
 For SwiftUI a Swift file will be created to use images from the code.
 
+#### Images with multiple idiom
+If name of an image contains idiom at the end (e.g. ~ipad), it will be exported like this:
+
+<img src="images/ios_image_idiom_xcode.png" />
+
 #### Typography
 
 When your execute `figma-export typography` command `figma-export` generates 3 files:
@@ -189,9 +192,9 @@ When your execute `figma-export typography` command `figma-export` generates 3 f
 3. `Label.swift` file that contains base Label class and class for each text style. E.g. HeaderLabel, BodyLabel, Caption1Label. Specify these classes in xib files on in code.
 
 Example of these files:
-- [./Example/UIComponents/Source/Label.swift](./Example/UIComponents/Source/Label.swift)
-- [./Example/UIComponents/Source/LabelStyle.swift](./Example/UIComponents/Source/LabelStyle.swift)
-- [./Example/UIComponents/Source/UIFont+extension.swift](./Example/UIComponents/Source/UIFont+extension.swift)
+- [./Examples/Example/UIComponents/Source/Label.swift](./Examples/Example/UIComponents/Source/Label.swift)
+- [./Examples/Example/UIComponents/Source/LabelStyle.swift](./Examples/Example/UIComponents/Source/LabelStyle.swift)
+- [./Examples/Example/UIComponents/Source/UIFont+extension.swift](./Examples/Example/UIComponents/Source/UIFont+extension.swift)
 
 ### Android
 
@@ -200,7 +203,7 @@ Colors will be exported to `values/colors.xml` and `values-night/colors.xml` fil
 Icons will be exported to `drawable` directory as vector xml files.
 
 Vector images will be exported to `drawable` and `drawable-night` directories as vector `xml` files.
-Raster images will be exported to `drawable-???dpi` and `drawable-night-???dpi` directories as `png` files.
+Raster images will be exported to `drawable-???dpi` and `drawable-night-???dpi` directories as `png` or `webp` files.
 
 ## Installation
 
@@ -218,6 +221,10 @@ Raster images will be exported to `drawable-???dpi` and `drawable-night-???dpi` 
 ### Homebrew
 ```
 brew install RedMadRobot/formulae/figma-export
+```
+If you want to export raster images in WebP format install [cwebp](https://developers.google.com/speed/webp/docs/using) command line utility.
+```
+brew install webp
 ```
 
 ### CocoaPods + Fastlane
@@ -259,13 +266,49 @@ Run `fastlane sync_colors` to run FigmaExport.
 
    `./figma-export images -i figma-export.yaml`
 
-   To export typography use `typography` argument:
+   To export typography (iOS only) use `typography` argument:
 
    `./figma-export typography -i figma-export.yaml`
 
-### Arguments
+### Android
 
-**Export specific icons/images**
+In the `figma-export.yaml` file you must specify the following properties:
+- `android.mainRes`
+- `android.icons.output` if you want export icons
+- `android.images.output` if you want export images
+
+When you execute `figma-export icons` command, FigmaExport clears the `{android.mainRes}/{android.icons.output}` directory before exporting all the icons.
+
+When you execute `figma-export images` command, FigmaExport clears the `{android.mainRes}/{android.images.output}` directory before exporting all the images.
+
+Example folder structure:
+```
+main/
+  res/
+    figma-export-icons/
+      drawable/
+      drawable-night/
+    figma-export-images/
+      drawable/
+      drawable-night/
+```
+
+Before first running `figma-export` you must add path to these directories in the the app‘s `build.gradle` file.
+
+```
+...
+android {
+  ...
+  sourceSets {
+    main {
+      res.srcDirs += "src/main/res/figma-export-icons"
+      res.srcDirs += "src/main/res/figma-export-images"
+    }
+  }
+}
+```
+
+### Arguments
 
 If you want to export specific icons/images you can list their names in the last argument like this:
 
@@ -277,141 +320,22 @@ If you want to export specific icons/images you can list their names in the last
 
 `./figma-export icons` — Exports all the icons.
 
-**Configuration file**
+Argument `-i` or `-input` specifies path to FigmaExport configuration file `figma-export.yaml`.
 
-Argument `-i` or `-input` specifies path to `figma-export.yaml` file where all the properties stores: figma, ios, android.
+### Configuration
 
-If `figma-export.yaml` file is next to the `figma-export` executable file you can omit `-i` option.
+All available configuration options described in the [CONFIG.md](CONFIG.md) file.
 
- `./figma-export colors`
+Example of `figma-export.yaml` file for iOS project — [Examples/Example/figma-export.yaml](./Examples/Example/figma-export.yaml)
 
-Example of `figma-export.yaml` file:
-```yaml
----
-figma:
-  # Identifier of Figma file
-  lightFileId: shPilWnVdJfo10YF12345
-  # [optional] Identifier of Figma file for dark mode
-  darkFileId: KfF6DnJTWHGZzC912345
+Example of `figma-export.yaml` file for Android project — [Examples/AndroidExample/figma-export.yaml](./Examples/AndroidExample/figma-export.yaml)
 
-# [optional] Common export parameters
-common:
-  colors:
-    # RegExp pattern for color name validation before exporting 
-    nameValidateRegexp: '^[a-zA-Z_]+$' # RegExp pattern for: background, background_primary, widget_primary_background
-  icons:
-    # RegExp pattern for icon name validation before exporting 
-    nameValidateRegexp: '^(ic)_(\d\d)_([a-z0-9_]+)$' # RegExp pattern for: ic_24_icon_name, ic_24_icon
-  images:
-    # RegExp pattern for image name validation before exporting
-    nameValidateRegexp: '^(img)_([a-z0-9_]+)$' # RegExp pattern for: img_image_name
-
-# [optional] iOS export parameters
-ios:
-  # Path to xcodeproj
-  xcodeprojPath: "./Example.xcodeproj"
-  # Xcode Target containing resources and corresponding swift code
-  target: "UIComponents"
-  # Absolute or relative path to the Assets.xcassets directory
-  xcassetsPath: "./Resources/Assets.xcassets"
-  # Is Assets.xcassets located in the main bundle?
-  xcassetsInMainBundle: true
-
-  # Parameters for exporting colors
-  colors:
-    # Should be generate color assets instead of pure swift code
-    useColorAssets: True
-    # [required if useColorAssets: True] Name of the folder inside Assets.xcassets where to place colors (.colorset directories)
-    assetsFolder: Colors
-    # Color name style: camelCase or snake_case
-    nameStyle: camelCase
-    # [optional] Absolute or relative path to swift file where to export UIKit colors (UIColor) for accessing from the code (e.g. UIColor.backgroundPrimary)
-    colorSwift: "./Sources/UIColor+extension.swift"
-    # [optional] Absolute or relative path to swift file where to export SwiftUI colors (Color) for accessing from the code (e.g. Color.backgroundPrimary)
-    swiftuiColorSwift: "./Source/Color+extension.swift"
-
-  # Parameters for exporting icons
-  icons:
-    # Image file format: pdf or svg
-    format: pdf
-    # Name of the folder inside Assets.xcassets where to place icons (.imageset directories)
-    assetsFolder: Icons
-    # Icon name style: camelCase or snake_case
-    nameStyle: camelCase
-    # [optional] Enable Preserve Vector Data for specified icons
-    preservesVectorRepresentation:
-    - ic24TabBarMain
-    - ic24TabBarEvents
-    - ic24TabBarProfile
-    # [optional] Absolute or relative path to swift file where to export icons (SwiftUI’s Image) for accessing from the code (e.g. Image.illZeroNoInternet)
-    swiftUIImageSwift: "./Source/Image+extension_icons.swift"
-    # [optional] Absolute or relative path to swift file where to generate extension for UIImage for accessing icons from the code (e.g. UIImage.ic24ArrowRight)
-    imageSwift: "./Example/Source/UIImage+extension_icons.swift"
-
-  # Parameters for exporting images
-  images:
-    # Name of the folder inside Assets.xcassets where to place images (.imageset directories)
-    assetsFolder: Illustrations
-    # Image name style: camelCase or snake_case
-    nameStyle: camelCase
-    # [optional] Absolute or relative path to swift file where to export images (SwiftUI’s Image) for accessing from the code (e.g. Image.illZeroNoInternet)
-    swiftUIImageSwift: "./Source/Image+extension_illustrations.swift"
-    # [optional] Absolute or relative path to swift file where to generate extension for UIImage for accessing illustrations from the code (e.g. UIImage.illZeroNoInternet)
-    imageSwift: "./Example/Source/UIImage+extension_illustrations.swift"
-
-  # Parameters for exporting typography
-  typography:
-    # [optional] Absolute or relative path to swift file where to export UIKit fonts (UIFont extension).
-    fontSwift: "./Source/UIComponents/UIFont+extension.swift"
-    # [optional] Absolute or relative path to swift file where to export SwiftUI fonts (Font extension).
-    swiftUIFontSwift: "./Source/View/Common/Font+extension.swift"
-    # Will FigmaExport generate UILabel for each text style (font) e.g. HeaderLabel, BodyLabel, CaptionLabel.
-    generateLabels: true
-    # Path to directory where to place UILabel for each text style (font) (Requred if generateLabels = true)
-    labelsDirectory: "./Source/UIComponents/"
-
-# [optional] Android export parameters
-android:
-  # Export path
-  mainRes: "./main/res"
-  # Parameters for exporting images
-  images:
-    # Image file format: svg or png
-    format: png
-
+Generate `figma-export.yaml` config file using one of the following command:
 ```
-### Figma properties 
-
-* `figma.lightFileId` — Id of the file containing light color palette and dark images. To obtain a file id, open the file. The file id will be present in the URL after the word file and before the file name.
-* `figma.darkFileId` — (Optional) Id of the file containing dark color palette and dark images.
-
-### iOS properties
-* `ios.xcodeprojPath` — Relative or absolute path to .xcodeproj file
-* `ios.target` — Xcode Target containing resources and corresponding swift code
-* `ios.xcassetsPath` — Relative or absolute path to directory `Assets.xcassets` where to export colors, icons and images.
-* `ios.xcassetsInMainBundle` — Is Assets.xcassets located in the main bundle?
-* `ios.colors.useColorAssets` — How to export colors? Use .xcassets and UIColor (useColorAssets = true) extension or extension only (useColorAssets = false)
-* `ios.colors.assetsFolder` — Name of the folder inside `Assets.xcassets` where colors will be exported. Used only if `useColorAssets == true`.
-* `ios.colors.nameStyle` — Color name style: camelCase or snake_case
-* `ios.colors.colorSwift` — [optional] Absolute or relative path to swift file where to export UIKit colors (UIColor) for accessing from the code (e.g. UIColor.backgroundPrimary)
-* `ios.colors.swiftuiColorSwift` — [optional] Absolute or relative path to swift file where to export SwiftUI colors (Color) for accessing from the code (e.g. Color.backgroundPrimary)
-* `ios.icons.format` — Image file format. `svg` or `pdf`.
-* `ios.icons.assetsFolder` — Name of the folder inside `Assets.xcassets` where icons will be exported.
-* `ios.icons.nameStyle` — Icon name style: camelCase or snake_case
-* `ios.icons.preservesVectorRepresentation` — An array of icon names that will supports Preseve Vecotor Data.
-* `ios.icons.swiftUIImageSwift` — [optional] Absolute or relative path to swift file where to export icons (SwiftUI’s Image) for accessing from the code (e.g. Image.illZeroNoInternet)
-* `ios.icons.imageSwift` — [optional] Absolute or relative path to swift file where to generate extension for UIImage for accessing icons from the code (e.g. UIImage.ic24ArrowRight)
-* `ios.images.assetsFolder` — Name of the folder inside `Assets.xcassets` where images will be exported.
-* `ios.images.nameStyle` — Images name style: camelCase or snake_case
-* `ios.images.swiftUIImageSwift` — [optional] Absolute or relative path to swift file where to export images (SwiftUI’s Image) for accessing from the code (e.g. Image.illZeroNoInternet)
-* `ios.images.imageSwift` — [optional] Absolute or relative path to swift file where to generate extension for UIImage for accessing illustrations from the code (e.g. UIImage.illZeroNoInternet)
-* `ios.typography.fontSwift` - [optional] Absolute or relative path to swift file where to export UIKit fonts (UIFont extension).
-* `ios.typography.swiftUIFontSwift` - [optional] Absolute or relative path to swift file where to export SwiftUI fonts (Font extension).
-* `ios.typography.generateLabels` -  Should FigmaExport generate UILabel for each text style (font)? E.g. HeaderLabel, BodyLabel, CaptionLabel
-* `ios.typography.labelsDirectory` - Relative or absolute path to directory where to place UILabel for each text style (font) (Requred if generateLabels = true)
-
-### Android properties
-* `android.path` — Relative or absolute path to the `main/res` folder including it. The colors will be exported to `./values/colors.xml` and `./values-night/colors.xml`.
+figma-export init --platform android
+figma-export init --platform ios
+```
+It will generate config file in the current directory.
 
 ### Exporting Typography
 
@@ -439,12 +363,17 @@ File | Styles
 
 For `figma-export icons`
 
-Your Figma file must contains a frame with `Icons` name which contains components for each icon.
+By default your Figma file should contains a frame with `Icons` name which contains components for each icon. You may change a frame name in a [config](Config.md) file by setting `common.icons.figmaFrameName` property.
 
 For `figma-export images`
 
-Your Figma file must contains a frame with `Illustrations` name which contains components for each illustration.
+Your Figma file should contains a frame with `Illustrations` name which contains components for each illustration. You may change a frame name in a [config](Config.md) file by setting `common.images.figmaFrameName` property.
+
 If you support dark mode you must have two Figma files.
+
+If you want to specify image variants for different devices (iPhone, iPad, Mac etc.), add an extra `~` mark with idiom name. For example add `~ipad` postfix:
+
+<img src="images/ios_image_idiom_figma.png"/>
 
 For `figma-export typography`.
 
@@ -461,44 +390,7 @@ Advice: Font in Tab Bar and standard Navigation Bar must not support Dynamic Typ
 
 ## Example project
 
-The UI-Kit of the example project in Figma:
-
-[FigmaExport Example File [Light]](https://www.figma.com/file/BEjfU0kCVnPqXdRLfoLvkf/FigmaExport-Example-File-Dark)
-
-<a href="https://www.figma.com/file/BEjfU0kCVnPqXdRLfoLvkf/FigmaExport-Example-File-Dark"><img src="images/figma_l.png" width="600" /></a>
-
-[FigmaExport Example File [Dark]](https://www.figma.com/file/QwF30YrucxVwQyBNT0C09i/FigmaExport-Example-File-Dark)
-
-<a href="https://www.figma.com/file/QwF30YrucxVwQyBNT0C09i/FigmaExport-Example-File-Dark"><img src="images/figma_d.png" width="600" /></a>
-### Example iOS project
-
-There are 2 example iOS projects in `Example` and `ExampleSwiftUI` directories which demostrates how to use figma-export with UIKit and SwiftUI.
-
-<img src="images/figma.png" />
-
-**How to setup iOS project**
-1. Open `Example/fastlane/.env` file.
-2. Change FIGMA_PERSONAL_TOKEN to your personal Figma token.
-3. Go to `Example` folder.
-4. Run the following command in Termanal to install cocoapods and fastlane: `bundle install`
-5. Run the following command in Termanal to install figma-export: `bundle exec pod install`
-
-**How to export resources from figma**
-* To export colors run: `bundle exec fastlane export_colors`
-* To export icons run: `bundle exec fastlane export_icons`
-* To export images run: `bundle exec fastlane export_images`
-* To export typography run: `bundle exec fastlane export_typography`
-
-### Example Android project
-
-There is an example Android Studio project in `AndroidExample` directory which demostrates how to use `figma-export`.
-
-<img src="images/android_example.png"/>
-
-**How to export resources from figma to the project**
-* To export colors run: `figma-export colors`
-* To export icons run: `figma-export icons`
-* To export images run: `figma-export images`
+Example iOS projects, Android project and example Figma files see in the [Examples folder](./Examples)
 
 ## Contributing
 
